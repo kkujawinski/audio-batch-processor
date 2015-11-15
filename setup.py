@@ -69,7 +69,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'abp = abp.cli:main',
+            'abp = abp.cli:cli',
         ]
     },
 )

@@ -1,23 +1,41 @@
-"""
-Module that contains the command line app.
-
-Why does this file exist, and why not put this in __main__?
-
-  You might be tempted to import things from __main__ later, but that will cause
-  problems: the code will get executed twice:
-
-  - When you run `python -mabp` python will execute
-    ``__main__.py`` as a script. That means there won't be any
-    ``abp.__main__`` in ``sys.modules``.
-  - When you import __main__ it will get executed again (as a module) because
-    there's no ``abp.__main__`` in ``sys.modules``.
-
-  Also see (1) from http://click.pocoo.org/5/setuptools/#setuptools-integration
-"""
 import click
+from functools import wraps
 
 
-@click.command()
-@click.argument('names', nargs=-1)
-def main(names):
-    click.echo(repr(names))
+@click.group()
+def cli():
+    pass
+
+
+def common_arguments(fn):
+    @click.option('--input', default='.', help='Input path to parent directory with mp3 files.')
+    @click.option('--output', default=None, help='Output path. Not given means changes will be processed in the same directory.')
+    @wraps(fn)
+    def _fn():
+        return fn()
+    return _fn
+
+
+
+@cli.command()
+@common_arguments
+def summary():
+    click.echo('Displays audio files details')
+
+
+@cli.command(name='id3-edit')
+@common_arguments
+def id3_edit():
+    click.echo('Edits id3 tags with rules')
+
+
+@cli.command(name='file-rename')
+@common_arguments
+def file_rename():
+    # Warning, prompt for using in same directory
+    click.echo('Rename files according to patterns')
+
+
+cli.add_command(summary)
+cli.add_command(id3_edit)
+cli.add_command(file_rename)
