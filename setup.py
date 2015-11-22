@@ -61,8 +61,8 @@ setup(
     ],
     install_requires=[
         'click',
-        'tabulate',
-        'eyeD3'
+        'tabletext',
+        'eyeD3',
     ],
     extras_require={
         # eg:
