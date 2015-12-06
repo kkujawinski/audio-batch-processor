@@ -1,37 +1,38 @@
 # -*- coding: utf-8 -*-
 import os
 import re
-from unicodedata import normalize
 from functools import wraps
+from unicodedata import normalize
 
 import click
 import eyed3
+import HTMLParser
 from tabletext import to_text
+from unidecode import unidecode
 
 eyed3.log.setLevel("ERROR")
+html = HTMLParser.HTMLParser()
 
 AUDIO_FILE_PATTERN = re.compile(r'.+\.mp3$')
 ID3_TAGS = ['track_num', 'title', 'artist', 'album']
 TABLE_HEADERS = ['Track number', 'Title', 'Artist', 'Album']
-
 ID3_TAGS_DESERIALIZER = {
     'track_num': lambda id3_track_num: unicode(id3_track_num[0] or '')
 }
-
 ID3_TAGS_SERIALIZER = {
     'track_num': lambda id3_track_num: (int(id3_track_num), None)
 }
+default_deserializer = lambda x: unicode(x or '')
+default_serializer = lambda x: x
 
 
-default_deserialize = lambda x: unicode(x or '')
 def id3_deserialize(tag, value):
-    method = ID3_TAGS_DESERIALIZER.get(tag, default_deserialize)
+    method = ID3_TAGS_DESERIALIZER.get(tag, default_deserializer)
     return normalize('NFC', method(value))
 
 
-default_serialize = lambda x: x
 def id3_serialize(tag, value):
-    method = ID3_TAGS_SERIALIZER.get(tag, default_serialize)
+    method = ID3_TAGS_SERIALIZER.get(tag, default_serializer)
     return method(value)
 
 
@@ -40,12 +41,14 @@ def get_id3_values(file_path):
     return [id3_deserialize(tag, getattr(audiofile.tag, tag)) for tag in ID3_TAGS]
 
 
-def save_id3_values(file_path, values, empty_override=False):
+def save_id3_values(file_path, values, empty_override=False, encoding='utf8'):
     audiofile = eyed3.load(file_path)
     for tag, value in zip(ID3_TAGS, values):
         if value or empty_override:
             setattr(audiofile.tag, tag, id3_serialize(tag, value))
-    audiofile.tag.save()
+    audiofile.tag.save(encoding=encoding)
+
+    click.echo('Updated ID3 tags for file: %s' % file_path)
 
 
 def tabulate_ignored_files(table):
@@ -60,14 +63,14 @@ def tabulate_ignored_files(table):
     return to_text([['Directory path', 'File name', 'Reason']] + rows, header=True)
 
 
-def _tabulate_values(table):
+def _tabulate(table, headers=TABLE_HEADERS):
     """
     Lot of magic to fake colspan
 
     Input: [dir_path, [(file_name, values[]])]]
     """
     output = []
-    max_widths = [len(cell) + 2 for cell in TABLE_HEADERS]
+    max_widths = [len(cell) + 2 for cell in headers]
 
     for path, file_row in table:
         for file_name, rows in file_row:
@@ -76,8 +79,8 @@ def _tabulate_values(table):
                     max_cell_len = max(len(line) for line in cell.split('\n'))
                     max_widths[i] = max(max_widths[i], max_cell_len)
 
-    total_line_width = sum(max_widths) + 2 * len(max_widths) + 1
-    justed_header = [cell.ljust(max_widths[i]) for i, cell in enumerate(TABLE_HEADERS)]
+    total_line_width = sum(max_widths) + 3 * len(max_widths) - 3
+    justed_header = [cell.ljust(max_widths[i]) for i, cell in enumerate(headers)]
 
     for path, file_row in table:
         output.append('')
@@ -96,16 +99,17 @@ def _tabulate_values(table):
 
     return '\n'.join(output)
 
+
 def tabulate_values(table):
     new_table = [(
         dir_path,
         [
-            (file_name, [values])
-            for file_name, values in rows
+            (file_path, [row])
+            for file_path, row in rows
         ]
     ) for dir_path, rows in table]
+    return _tabulate(new_table)
 
-    _tabulate_values(table)
 
 def tabulate_changes(table):
     def annotate_previous(values):
@@ -114,16 +118,15 @@ def tabulate_changes(table):
     new_table = [(
         dir_path,
         [
-            (file_name, [new_values, annotate_previous(old_values)])
+            (file_name, [['new'] + new_values, ['prev'] + old_values])
             for file_name, new_values, old_values in rows
         ]
     ) for dir_path, rows in table]
-
-    return _tabulate_values(new_table)
+    return _tabulate(new_table, headers=[''] + TABLE_HEADERS)
 
 
 def get_matched_files(input_path):
-    for path, dirs, files in os.walk(input_path):
+    for path, dirs, files in os.walk(unicode(input_path)):
         path = normalize('NFC', path)
         matched_files = (normalize('NFC', file_) for file_ in files if AUDIO_FILE_PATTERN.match(file_))
         yield (path, matched_files)
@@ -140,7 +143,7 @@ def validate_output_path(ctx, param, value):
     if not value:
         return None
     real_path = os.path.realpath(value)
-    if not (os.path.isdir(real_path) and listdir(real_path) == []):
+    if not (os.path.isdir(real_path) and os.listdir(real_path) == []):
         raise click.BadParameter('Output path nees to point empty directory.')
     return real_path
 
@@ -154,9 +157,10 @@ def validate_regex_list(ctx, param, values):
             raise click.BadParameter('"%s" is not proper regex pattern - %s' % (value, str(e)))
     return output
 
+
 def common_arguments(fn):
-    @click.option('--input', '-i', callback=validate_input_path, default='.',
-                  help='Input path to parent directory with mp3 files.')
+    @click.argument('input', callback=validate_input_path, default='.',
+                    type=click.Path(exists=True, dir_okay=True, readable=True))
     @wraps(fn)
     def _fn(*args, **kwargs):
         return fn(*args, **kwargs)
@@ -166,6 +170,7 @@ def common_arguments(fn):
 @click.group()
 def cli():
     pass
+
 
 @cli.command(name='list')
 @common_arguments
@@ -187,27 +192,63 @@ def list_(**kwargs):
     click.echo('\n')
 
 
+def get_grouped_commands(groups=[], first_group_name='Options'):
+    groups = iter(groups)
 
-@cli.command()
+    class GroupedCommand(click.Command):
+        def format_options(self, ctx, formatter):
+            def print_group(opts, group_name=None):
+                if not opts:
+                    return
+                with formatter.section(group_name):
+                    formatter.write_dl(opts)
+
+            opts = []
+            current_group_name = first_group_name
+            next_group_name, next_group_first_item = next(groups, (None, None))
+
+            for param in self.get_params(ctx):
+                rv = param.get_help_record(ctx)
+                if rv is not None:
+                    if next_group_first_item and rv[0].startswith(next_group_first_item):
+                        print_group(opts, current_group_name)
+                        opts = []
+                        current_group_name = next_group_name
+                        next_group_name, next_group_first_item = next(groups, (None, None))
+                    opts.append(rv)
+
+            print_group(opts, current_group_name)
+
+    return GroupedCommand
+
+
+@cli.command(cls=get_grouped_commands([('Formatters', '-a'), ('Confirmation', '-d'), ('Other', '-o')]))
 @common_arguments
 @click.option('--file-pattern', '-p', callback=validate_regex_list, multiple=True,
               help='Regex expression for file path. Named groups are used as ID3 tags.' +
               'Many patterns can be defined, first matched is used.\n\n' +
               'Available tags: title, artist, album, track_num. \n\n'
               'E.g. -p "(?P<album>[^/]+)/(?P<track_num>[0-9]+)?(?P<artist>[^/]+) - (?P<title>[^(]+)\."')
-@click.option('--empty-override', '-o', is_flag=True,
-              help='If regex pattern doesn\'t define tag clear it anyway.')
 @click.option('--asciify', '-a', is_flag=True,
               help='Converts non ascii characters to corresponding ones in ascii.')
+@click.option('--unescape', '-x', is_flag=True,
+              help='Decode escaped characters.')
+
 @click.option('--confirm-each-directory', '-d', is_flag=True,
               help='Each directory changes confirmation.')
 @click.option('--confirm-all', '-a', is_flag=True,
               help='All changes confirmation.')
 @click.option('--no-confirmation', '-f', is_flag=True,
               help='No confirmation needed')
+@click.option('--empty-override', '-o', is_flag=True,
+              help='If regex pattern doesn\'t define tag clear it anyway.')
+@click.option('--encoding', '-e', default='utf8',
+              help='Save ID3 tags with given encoding. Available utf8, latin1')
 def id3(**kwargs):
     input_path = kwargs['input']
     asciify = kwargs['asciify']
+    unescape = kwargs['unescape']
+    encoding = kwargs.get('encoding', 'utf8')
     file_patterns = kwargs['file_pattern'] or []
     empty_override = kwargs['empty_override']
 
@@ -217,7 +258,8 @@ def id3(**kwargs):
 
     all_changes, ignored_files = get_id3_changes(
         input_path,
-        empty_override=empty_override, file_patterns=file_patterns, asciify=asciify
+        empty_override=empty_override, file_patterns=file_patterns, asciify=asciify,
+        unescape=unescape
     )
 
     if ignored_files:
@@ -230,10 +272,11 @@ def id3(**kwargs):
         no_confirmation=no_confirmation
     )
 
-    apply_changes(approved_changes)
+    click.echo('\nAPPLYING CHANGES')
+    apply_changes(approved_changes, encoding=encoding)
 
 
-def get_id3_changes(input_path, empty_override, file_patterns, asciify):
+def get_id3_changes(input_path, empty_override, file_patterns, asciify, unescape):
     if empty_override:
         def record_equals(values, changes):
             return values == changes
@@ -245,7 +288,7 @@ def get_id3_changes(input_path, empty_override, file_patterns, asciify):
             return True
 
     all_changes = []  # (dir_path, [(file_name, new_values[], old_values[])])
-    ignored_files = [] # (dir_path, [(file_name, reason)])
+    ignored_files = []  # (dir_path, [(file_name, reason)])
 
     for dir_path, matched_files in get_matched_files(input_path):
         path_changes = []
@@ -265,9 +308,11 @@ def get_id3_changes(input_path, empty_override, file_patterns, asciify):
                 new_values = [(groups.get(tag) or '').strip() for tag in ID3_TAGS]
                 break
 
+            if unescape:
+                new_values = [html.unescape(cell) for cell in new_values]
+
             if asciify:
-                # TODO
-                pass
+                new_values = [unidecode(cell) for cell in new_values]
 
             if record_equals(values, new_values):
                 if file_patterns and values is new_values:
@@ -330,10 +375,10 @@ def get_approved_changes(changes, confirm_each_directory, confirm_all, no_confir
     return approved_changes
 
 
-def apply_changes(changes):
+def apply_changes(changes, encoding):
     for dir_path, rows in changes:
         for file_name, new_values, old_values in rows:
-            save_id3_values(os.path.join(dir_path, file_name), new_values)
+            save_id3_values(os.path.join(dir_path, file_name), new_values, encoding=encoding)
 
 
 @cli.command()

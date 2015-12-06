@@ -23,7 +23,6 @@ def read(*names, **kwargs):
     ).read()
 
 
-
 setup(
     name='abp',
     version='0.1.0',
@@ -62,7 +61,8 @@ setup(
     install_requires=[
         'click',
         'tabletext',
-        'eyeD3',
+        'eyed3',
+        'unidecode',
     ],
     extras_require={
         # eg:
