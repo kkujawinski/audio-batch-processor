@@ -132,22 +132,6 @@ def get_matched_files(input_path):
         yield (path, matched_files)
 
 
-def validate_input_path(ctx, param, value):
-    real_path = os.path.realpath(value)
-    if not os.path.isdir(real_path):
-        raise click.BadParameter('Input path needs to point the directory.')
-    return real_path
-
-
-def validate_output_path(ctx, param, value):
-    if not value:
-        return None
-    real_path = os.path.realpath(value)
-    if not (os.path.isdir(real_path) and os.listdir(real_path) == []):
-        raise click.BadParameter('Output path nees to point empty directory.')
-    return real_path
-
-
 def validate_regex_list(ctx, param, values):
     output = []
     for value in values:
@@ -158,22 +142,13 @@ def validate_regex_list(ctx, param, values):
     return output
 
 
-def common_arguments(fn):
-    @click.argument('input', callback=validate_input_path, default='.',
-                    type=click.Path(exists=True, dir_okay=True, readable=True))
-    @wraps(fn)
-    def _fn(*args, **kwargs):
-        return fn(*args, **kwargs)
-    return _fn
-
-
 @click.group()
 def cli():
     pass
 
 
 @cli.command(name='list')
-@common_arguments
+@click.argument('input', default='.', type=click.Path(exists=True, dir_okay=True, readable=True))
 def list_(**kwargs):
     input_path = kwargs['input']
     values = []
@@ -223,7 +198,7 @@ def get_grouped_commands(groups=[], first_group_name='Options'):
 
 
 @cli.command(cls=get_grouped_commands([('Formatters', '-a'), ('Confirmation', '-d'), ('Other', '-o')]))
-@common_arguments
+@click.argument('input', default='.', type=click.Path(exists=True, dir_okay=True, readable=True))
 @click.option('--file-pattern', '-p', callback=validate_regex_list, multiple=True,
               help='Regex expression for file path. Named groups are used as ID3 tags.' +
               'Many patterns can be defined, first matched is used.\n\n' +
@@ -233,7 +208,6 @@ def get_grouped_commands(groups=[], first_group_name='Options'):
               help='Converts non ascii characters to corresponding ones in ascii.')
 @click.option('--unescape', '-x', is_flag=True,
               help='Decode escaped characters.')
-
 @click.option('--confirm-each-directory', '-d', is_flag=True,
               help='Each directory changes confirmation.')
 @click.option('--confirm-all', '-a', is_flag=True,
@@ -382,13 +356,20 @@ def apply_changes(changes, encoding):
 
 
 @cli.command()
-@common_arguments
-@click.option('--output', '-o', callback=validate_output_path, default=None,
+@click.argument('input', default='.', type=click.Path(exists=True, dir_okay=True, readable=True))
+@click.option('--output', '-o', type=click.Path(dir_okay=True, readable=True),
               help='Output path. Not given means changes will be processed in the same directory.')
-def rename():
-    # Warning, prompt for using in same directory
-    click.echo('Rename files according to patterns')
+@click.option('--file-path-pattern', '-p', required=True,
+              help='Pattern of file path. Available variables: $track_num, $title, $artist, $album.')
+def rename(**kwargs):
+    input_path = kwargs['input']
+    output_path = kwargs['output'] or kwargs['input']
+    file_path_pattern = kwargs['file_path_pattern']
 
+    for dir_path, matched_files in get_matched_files(input_path):
+        import pdb; pdb.set_trace()
+
+    # Warning, prompt for using in same directory
 
 cli.add_command(list_)
 cli.add_command(id3)
