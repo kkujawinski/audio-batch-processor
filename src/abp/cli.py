@@ -17,7 +17,7 @@ AUDIO_FILE_PATTERN = re.compile(r'.+\.mp3$')
 ID3_TAGS = ['track_num', 'title', 'artist', 'album']
 TABLE_HEADERS = ['Track number', 'Title', 'Artist', 'Album']
 ID3_TAGS_DESERIALIZER = {
-    'track_num': lambda id3_track_num: unicode(id3_track_num[0] or '')
+    'track_num': lambda id3_track_num: unicode(id3_track_num and id3_track_num[0] or '')
 }
 ID3_TAGS_SERIALIZER = {
     'track_num': lambda id3_track_num: (int(id3_track_num), None)
@@ -38,11 +38,19 @@ def id3_serialize(tag, value):
 
 def get_id3_values(file_path):
     audiofile = eyed3.load(file_path)
+    if audiofile.tag is None:
+        audiofile.initTag()
     return [id3_deserialize(tag, getattr(audiofile.tag, tag)) for tag in ID3_TAGS]
+
+
+def get_id3_values_dict(file_path):
+    return dict(zip(ID3_TAGS, get_id3_values(file_path)))
 
 
 def save_id3_values(file_path, values, empty_override=False, encoding='utf8'):
     audiofile = eyed3.load(file_path)
+    if audiofile.tag is None:
+        audiofile.initTag()
     for tag, value in zip(ID3_TAGS, values):
         if value or empty_override:
             setattr(audiofile.tag, tag, id3_serialize(tag, value))
@@ -100,6 +108,16 @@ def _tabulate(table, headers=TABLE_HEADERS):
     return '\n'.join(output)
 
 
+def changes_confirmation(text):
+    confirm = None
+    while confirm not in ('y', 'n', 's'):
+        click.echo('\n%s [y]es / [n]o / [s]kip all' % text)
+        confirm = click.getchar(echo=True).lower()
+    if 's' == confirm:
+        raise SkipRestException()
+    return 'y' == confirm
+
+
 def tabulate_values(table):
     new_table = [(
         dir_path,
@@ -123,6 +141,10 @@ def tabulate_changes(table):
         ]
     ) for dir_path, rows in table]
     return _tabulate(new_table, headers=[''] + TABLE_HEADERS)
+
+
+def tabulate_renames(table):
+    pass
 
 
 def get_matched_files(input_path):
@@ -310,15 +332,6 @@ class SkipRestException(Exception):
 
 
 def get_approved_changes(changes, confirm_each_directory, confirm_all, no_confirmation):
-    def changes_confirmation(text):
-        confirm = None
-        while confirm not in ('y', 'n', 's'):
-            click.echo('\n%s [y]es / [n]o / [s]kip all' % text)
-            confirm = click.getchar(echo=True).lower()
-        if 's' == confirm:
-            raise SkipRestException()
-        return 'y' == confirm
-
     click.echo('\nCHANGES')
     approved_changes = []
 
@@ -361,15 +374,92 @@ def apply_changes(changes, encoding):
               help='Output path. Not given means changes will be processed in the same directory.')
 @click.option('--file-path-pattern', '-p', required=True,
               help='Pattern of file path. Available variables: $track_num, $title, $artist, $album.')
+@click.option('--confirm-each-directory', '-d', is_flag=True,
+              help='Each directory changes confirmation.')
+@click.option('--confirm-all', '-a', is_flag=True,
+              help='All changes confirmation.')
+@click.option('--no-confirmation', '-f', is_flag=True,
+              help='No confirmation needed')
 def rename(**kwargs):
     input_path = kwargs['input']
     output_path = kwargs['output'] or kwargs['input']
     file_path_pattern = kwargs['file_path_pattern']
 
-    for dir_path, matched_files in get_matched_files(input_path):
-        import pdb; pdb.set_trace()
+    no_confirmation = kwargs['no_confirmation']
+    confirm_all = kwargs['confirm_all']
+    confirm_each_directory = kwargs['confirm_each_directory']
 
-    # Warning, prompt for using in same directory
+    renames = get_renames(input_path, file_path_pattern)
+    approved_renames = get_approved_renames(renames, confirm_each_directory, confirm_all, no_confirmation)
+    apply_renames(approved_renames, input_path, output_path)
+
+
+def get_renames(input_path, file_path_pattern):
+    all_renames = []  # (dir_path, [(new_file_path, old_file_path,)])
+
+    for dir_path, matched_files in get_matched_files(input_path):
+        path_renames = []
+
+        for file_name in matched_files:
+            old_file_path = os.path.join(dir_path, file_name)
+            new_file_path = file_path_pattern
+            for name, value in get_id3_values_dict(old_file_path).items():
+                new_file_path = new_file_path.replace('$' + name, value)
+
+            path_renames.append((new_file_path, os.path.relpath(old_file_path, input_path)))
+
+        if path_renames:
+            all_renames.append((dir_path, path_renames))
+
+    return all_renames
+
+
+def get_approved_renames(renames, confirm_each_directory, confirm_all, no_confirmation):
+    click.echo('\nRENAMES')
+    approved_renames = []
+
+    try:
+        if no_confirmation:
+            click.echo(tabulate_renames(renames))
+            approved_renames.extend(renames)
+        elif confirm_all:
+            click.echo(tabulate_renames(renames))
+            if changes_confirmation(text='Apply those renames?'):
+                approved_renames.extend(renames)
+        elif confirm_each_directory:
+            for dir_path, rows in renames:
+                renames_record = [(dir_path, rows)]
+                click.echo(tabulate_renames(renames_record))
+                if changes_confirmation(text='Apply those renames?'):
+                    approved_renames.append(renames_record)
+        else:
+            for dir_path, rows in renames:
+                for new_file_path, old_file_path in rows:
+                    renames_record = [(dir_path, [(new_file_path, old_file_path)])]
+                    click.echo(tabulate_renames(renames_record))
+                    if changes_confirmation(text='Apply this rename?'):
+                        approved_renames.extend(renames_record)
+    except SkipRestException:
+        pass
+
+    return approved_renames
+
+
+def mkdirnotex(filename):
+    folder = os.path.dirname(filename)
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+
+def apply_renames(renames, input_path, output_path):
+    for dir_path, rows in renames:
+        for new_file_path, old_file_path in rows:
+            new_full_file_path = os.path.join(output_path, new_file_path)
+            old_full_file_path = os.path.join(input_path, old_file_path)
+
+            mkdirnotex(new_full_file_path)
+            os.rename(old_full_file_path, new_full_file_path)
+
 
 cli.add_command(list_)
 cli.add_command(id3)

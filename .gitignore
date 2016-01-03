@@ -61,3 +61,7 @@ docs/_build
 .bootstrap
 .appveyor.token
 *.bak
+
+# IDE
+*.sublime-project
+*.sublime-workspace
