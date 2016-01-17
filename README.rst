@@ -22,25 +22,25 @@ Audio Batch Processor
     :alt: Coverage Status
     :target: https://coveralls.io/r/kkujawinski/audio-batch-processor
 
-.. |version| image:: https://img.shields.io/pypi/v/abp.svg?style=flat
+.. |version| image:: https://img.shields.io/pypi/v/audio-batch-processor.svg?style=flat
     :alt: PyPI Package latest release
-    :target: https://pypi.python.org/pypi/abp
+    :target: https://pypi.python.org/pypi/audio-batch-processor
 
-.. |downloads| image:: https://img.shields.io/pypi/dm/abp.svg?style=flat
+.. |downloads| image:: https://img.shields.io/pypi/dm/audio-batch-processor.svg?style=flat
     :alt: PyPI Package monthly downloads
-    :target: https://pypi.python.org/pypi/abp
+    :target: https://pypi.python.org/pypi/audio-batch-processor
 
-.. |wheel| image:: https://img.shields.io/pypi/wheel/abp.svg?style=flat
+.. |wheel| image:: https://img.shields.io/pypi/wheel/audio-batch-processor.svg?style=flat
     :alt: PyPI Wheel
-    :target: https://pypi.python.org/pypi/abp
+    :target: https://pypi.python.org/pypi/audio-batch-processor
 
-.. |supported-versions| image:: https://img.shields.io/pypi/pyversions/abp.svg?style=flat
+.. |supported-versions| image:: https://img.shields.io/pypi/pyversions/audio-batch-processor.svg?style=flat
     :alt: Supported versions
-    :target: https://pypi.python.org/pypi/abp
+    :target: https://pypi.python.org/pypi/audio-batch-processor
 
-.. |supported-implementations| image:: https://img.shields.io/pypi/implementation/abp.svg?style=flat
+.. |supported-implementations| image:: https://img.shields.io/pypi/implementation/audio-batch-processor.svg?style=flat
     :alt: Supported implementations
-    :target: https://pypi.python.org/pypi/abp
+    :target: https://pypi.python.org/pypi/audio-batch-processor
 
 
 Batch tool for processing audio files.
@@ -52,7 +52,7 @@ Installation
 
 ::
 
-    pip install abp
+    pip install audio-batch-processor
 
 Documentation
 =============

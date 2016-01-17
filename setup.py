@@ -23,7 +23,7 @@ def read(*names, **kwargs):
     ).read()
 
 setup(
-    name='abp',
+    name='audio-batch-processor',
     version='0.1.0',
     license='GNU GPLv3',
     description='Batch tool for processing audio files.',
