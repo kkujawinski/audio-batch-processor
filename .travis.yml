@@ -6,10 +6,10 @@ env:
     LD_PRELOAD=/lib/x86_64-linux-gnu/libSegFault.so
   matrix:
     - TOXENV=check
-    - TOXENV=2.7,coveralls,codecov
-    - TOXENV=2.7-nocover
-    - TOXENV=pypy,coveralls,codecov
-    - TOXENV=pypy-nocover
+    - TOXENV=py27-cover,codecov
+    - TOXENV=py27-nocov
+    - TOXENV=pypy-cover,codecov
+    - TOXENV=pypy-nocov
 before_install:
   - python --version
   - uname -a
