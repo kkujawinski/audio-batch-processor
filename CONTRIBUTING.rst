@@ -37,7 +37,7 @@ Development
 
 To set up `audio-batch-processor` for local development:
 
-1. `Fork audio-batch-processor on GitHub <https://github.com/kkujawinski/audio-batch-processor/fork>`_.
+1. `Fork audio-batch-processor on GitHub <https://github.com/kkujawinski/audio-batch-processor>`_.
 2. Clone your fork locally::
 
     git clone git@github.com:your_name_here/audio-batch-processor.git
