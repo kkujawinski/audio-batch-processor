@@ -1,29 +1,35 @@
 # -*- coding: utf-8 -*-
 import os
 import re
-from functools import wraps
+import six
 from unicodedata import normalize
 
 import click
 import eyed3
-import HTMLParser
+from six.moves import html_parser
 from tabletext import to_text
 from unidecode import unidecode
 
 eyed3.log.setLevel("ERROR")
-html = HTMLParser.HTMLParser()
+html = html_parser.HTMLParser()
 
 AUDIO_FILE_PATTERN = re.compile(r'.+\.mp3$')
 ID3_TAGS = ['track_num', 'title', 'artist', 'album']
 TABLE_HEADERS = ['Track number', 'Title', 'Artist', 'Album']
 ID3_TAGS_DESERIALIZER = {
-    'track_num': lambda id3_track_num: unicode(id3_track_num and id3_track_num[0] or '')
+    'track_num': lambda id3_track_num: six.text_type(id3_track_num and id3_track_num[0] or '')
 }
 ID3_TAGS_SERIALIZER = {
     'track_num': lambda id3_track_num: (int(id3_track_num), None)
 }
-default_deserializer = lambda x: unicode(x or '')
-default_serializer = lambda x: x
+
+
+def default_deserializer(x):
+    return six.text_type(x or '')
+
+
+def default_serializer(x):
+    return x
 
 
 def id3_deserialize(tag, value):
@@ -148,7 +154,7 @@ def tabulate_renames(table):
 
 
 def get_matched_files(input_path):
-    for path, dirs, files in os.walk(unicode(input_path)):
+    for path, dirs, files in os.walk(six.text_type(input_path)):
         path = normalize('NFC', path)
         matched_files = (normalize('NFC', file_) for file_ in files if AUDIO_FILE_PATTERN.match(file_))
         yield (path, matched_files)
