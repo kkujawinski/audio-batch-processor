@@ -24,7 +24,7 @@ project = 'Audio Batch Processor'
 year = '2015'
 author = 'Kamil Kujawinski'
 copyright = '{0}, {1}'.format(year, author)
-version = release = '0.1.0'
+version = release = '0.2.0'
 # on_rtd is whether we are on readthedocs.org
 on_rtd = os.environ.get('READTHEDOCS', None) == 'True'
 
