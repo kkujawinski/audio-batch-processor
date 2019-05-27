@@ -58,8 +58,9 @@ setup(
         'six',
         'click',
         'tabletext',
-        'eyed3',
+        'eyed3<0.8.0',
         'unidecode',
+        'flask'
     ],
     extras_require={
         # eg:

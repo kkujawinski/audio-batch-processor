@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+    <link rel="stylesheet" href=" {{ url_for('static', filename='app.css') }}" >
+
+    {% raw %}
+    <script id="folder-list-details-template" type="text/x-handlebars-template">
+    {{#if folders_selected}}
+      <div id="folders-selected">
+        <h3>Selected</h3>
+        {{#each folders_selected}}
+            {{> FolderDetailsRow selected=1 folder=this }}
+        {{/each}}
+        <hr/>
+      </div>
+    {{/if}}
+    {{#if folders_not_selected}}
+      <div id="folders-not-selected">
+        <h3>Select folders</h3>
+        {{#each folders_not_selected}}
+            {{> FolderDetailsRow selected=0 folder=this }}
+        {{/each}}
+      </div>
+    {{/if}}
+    </script>
+
+    <script id="folder-details-template" type="text/x-handlebars-template">
+        <div data-path="{{folder}}" class="folder-details">
+            <div class="input-group mb-3 mt-3">
+                <div class="input-group-prepend">
+                    <div class="input-group-text">
+                        <input type="checkbox" aria-label="Checkbox for {{folder}}" class="folder-select"
+                        {{#if selected}}
+                          checked="checked"
+                        {{/if}}
+                        >
+                    </div>
+                </div>
+                <h2 class="form-control">{{folder}}</h2>
+                <div class="input-group-append">
+                    <div class="input-group-text expand-folder-group">
+                        <a href="#" class="expand-folder" title="Expand folder">&#8693;</a>
+                    </div>
+                </div>
+            </div>
+            <table class="table table-sm">
+                <thead class="thead-dark">
+                    <tr><th>Track number</th><th>Title</th><th>Artist</th><th>Album</th></tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+        </div>
+    </script>
+
+    <script id="folder-details-rows-template" type="text/x-handlebars-template">
+    {{#each files}}
+        <tr class="font-weight-light {{#if matched_pattern}}matched{{/if}}"><td colspan="4">
+          {{#if file_preview}}
+            <strike>{{file}}</strike> {{file_preview}}
+          {{else}}
+            {{{file}}}
+          {{/if}}
+          {{#if ../show_preview_pattern }}
+            <span class="pattern">(Matched: <i">{{matched_pattern}}</i>)</span></td></tr>
+          {{/if}}
+        <tr class="table-secondary">
+          <td>{{#if id3_preview.track_num}}
+                <strike>{{id3.track_num}}</strike> {{id3_preview.track_num}}
+              {{else}}
+                {{id3.track_num}}
+              {{/if}}</td>
+          <td>{{#if id3_preview.title}}
+                <strike>{{id3.title}}</strike> {{id3_preview.title}}
+              {{else}}
+                {{id3.title}}
+              {{/if}}</td>
+          <td>{{#if id3_preview.artist}}
+                <strike>{{id3.artist}}</strike> {{id3_preview.artist}}
+              {{else}}
+                {{id3.artist}}
+              {{/if}}</td>
+          <td>{{#if id3_preview.album}}
+                <strike>{{id3.album}}</strike> {{id3_preview.album}}
+              {{else}}
+                {{id3.album}}
+              {{/if}}</td>
+        </tr>
+    {{/each}}
+    </script>
+
+    {% endraw %}
+
+    <title>Audio Batch Processor UI</title>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Audio Batch Processor</h1>
+      <div class="jumbotron mt-3 p-3" id="filters-form">
+          <div id="mode-form" class="btn-group btn-group-toggle mb-3">
+              <button type="button" class="btn btn-secondary" id="id3" autocomplete="off" data-toggle="collapse" data-target="#id3-form" aria-expanded="true" value="id3"> ID3 tags</button>
+              <button type="button" class="btn btn-secondary" id="rename" autocomplete="off" data-toggle="collapse" data-target="#rename-form" aria-expanded="false" value="rename"> File renames</button>
+              <!-- <button type="button" class="btn btn-secondary" id="manual" autocomplete="off" data-toggle="collapse" data-target="#manual-form" aria-expanded="false" value="manual"> Manual </button> -->
+            </label>
+          </div>
+          <div id="id3-form" class="collapse show" data-parent="#filters-form"><form>
+              <div class="row">
+                  <div class="col-sm">
+                      <div class="input-group">
+                          <div class="input-group-prepend">
+                              <div class="input-group-text">
+                                  <input type="checkbox" name="asciify" aria-label="Checkbox for asciify">
+                              </div>
+                          </div>
+                          <span class="form-control">Convert to ASCII</span>
+                      </div>
+                  </div>
+                  <div class="col-sm">
+                      <div class="input-group">
+                        <div class="input-group-prepend">
+                          <div class="input-group-text">
+                            <input type="checkbox" name="unescape" aria-label="Checkbox for unescape">
+                          </div>
+                        </div>
+                        <span class="form-control">Unescape</span>
+                      </div>
+                  </div>
+                  <div class="col-sm">
+                      <select class="form-control" name="encoding">
+                      <option>utf8</option>
+                      <option>latin1</option>
+                      </select>
+                   </div>
+              </div>
+              <label for="ID3FilePatternInput">File patterns</label>
+              <textarea id="ID3FilePatternInput" name="patterns" class="form-control" aria-describedby="ID3FilePatternHelpBlock">
+(?P&lt;artist&gt;[^/]+)/[^-]+- (?P&lt;album&gt;[^/]+)/[^\d]*(?P&lt;track_num&gt;[0-9]+)[\. ](?:[^-]+ - )?(?P&lt;title&gt;[^(]+)\.
+</textarea>
+              <small id="ID3FilePatternHelpBlock" class="form-text text-muted">
+Regex expression for file path. Named groups are used as ID3 tags. Many patterns can be defined. Each line is seperate pattern.
+First matched is used.  Available tags: <b>title, artist, album, track_num</b>. <br/>
+E.g. <i>(?P&lt;album&gt;[^/]+)/(?P&lt;track_num&gt;[0-9]+)?(?P&lt;artist&gt;[^/]+) - (?P&lt;title&gt;[^(]+)\.</i>
+              </small>
+          </form></div>
+          <div id="rename-form" class="collapse" data-parent="#filters-form"><form>
+            <label for="RenameFilePatternInput">Pattern of file path</label>
+            <input type="text" id="RenameFilePatternInput" class="form-control" aria-describedby="RenameFilePatternHelpBlock"
+                   name="pattern" value="$artist/$album/$track_num - $title.mp3">
+            <small id="RenameFilePatternHelpBlock" class="form-text text-muted">
+          Available variables: <b>$track_num, $title, $artist, $album</b>. <br/>
+          E.g. <i>$artist/$album/$track_num - $title.mp3</i>
+            </small>
+            <div class="input-group mt-3">
+              <div class="input-group-prepend">
+                <div class="input-group-text">
+                  <input type="checkbox" id="override" name="override" aria-label="Checkbox for override">
+                </div>
+              </div>
+              <span class="form-control">Override duplicates</span>
+            </div>
+          </form></div>
+          <div id="manual-form" class="collapse" data-parent="#filters-form">
+              
+          </div>
+          <div class="mt-3">
+              <button type="button" class="btn btn-info btn-sm" id="preview-changes">Preview changes</button>
+          </div>
+          <div id="preview-values" class="mt-3"><h3>Preview values</h3><div class="values"></div>
+            <div id="filter-values" class="mt-3">
+                <button type="button" class="btn btn-secondary btn-sm" name="select-all">Select all</button>
+                <button type="button" class="btn btn-secondary btn-sm" name="select-none">Select none</button>
+                <button type="button" class="btn btn-secondary btn-sm" name="select-matched">Select matched</button>
+                <!-- <button type="button" class="btn btn-secondary btn-sm" name="select-changed">Select changed</button> -->
+                <button type="button" class="btn btn-primary btn-sm" id="apply-changes">Apply changes</button>
+            </div>
+          </div>
+      </div>
+
+      <div id="folder-list">
+      </div>
+    </div>
+
+    <!-- Optional JavaScript -->
+    <!-- jQuery first, then Popper.js, then Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.3.1.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+    <script type = "text/javascript" src="https://cdn.jsdelivr.net/npm/handlebars@4.1.2/dist/handlebars.min.js" ></script>
+    <script type = "text/javascript" src="{{ url_for('static', filename='app.js') }}" ></script>
+
+  </body>
+</html>

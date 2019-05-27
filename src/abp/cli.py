@@ -1,69 +1,29 @@
 # -*- coding: utf-8 -*-
+
+# cd /mnt/c/Users/kamil/Workspace/audio-batch-processor
+# ./env/bin/abp ui /mnt/c/Users/kamil/Music
+
 import os
 import re
 import six
-from unicodedata import normalize
 
 import click
-import eyed3
-from six.moves import html_parser
 from tabletext import to_text
-from unidecode import unidecode
 
-eyed3.log.setLevel("ERROR")
-html = html_parser.HTMLParser()
+from abp.core import (get_folder_dirs, get_folder_matched_files, get_id3_values, get_id3_changes, get_id3_values_dict,
+                      get_renames, apply_renames)
 
-AUDIO_FILE_PATTERN = re.compile(r'.+\.mp3$')
-ID3_TAGS = ['track_num', 'title', 'artist', 'album']
+
 TABLE_HEADERS = ['Track number', 'Title', 'Artist', 'Album']
-ID3_TAGS_DESERIALIZER = {
-    'track_num': lambda id3_track_num: six.text_type(id3_track_num and id3_track_num[0] or '')
-}
-ID3_TAGS_SERIALIZER = {
-    'track_num': lambda id3_track_num: (int(id3_track_num), None)
-}
 
-
-def default_deserializer(x):
-    return six.text_type(x or '')
-
-
-def default_serializer(x):
-    return x
-
-
-def id3_deserialize(tag, value):
-    method = ID3_TAGS_DESERIALIZER.get(tag, default_deserializer)
-    return normalize('NFC', method(value))
-
-
-def id3_serialize(tag, value):
-    method = ID3_TAGS_SERIALIZER.get(tag, default_serializer)
-    return method(value)
-
-
-def get_id3_values(file_path):
-    audiofile = eyed3.load(file_path)
-    if audiofile.tag is None:
-        audiofile.initTag()
-    return [id3_deserialize(tag, getattr(audiofile.tag, tag)) for tag in ID3_TAGS]
-
-
-def get_id3_values_dict(file_path):
-    return dict(zip(ID3_TAGS, get_id3_values(file_path)))
-
-
-def save_id3_values(file_path, values, empty_override=False, encoding='utf8'):
-    audiofile = eyed3.load(file_path)
-    if audiofile.tag is None:
-        audiofile.initTag()
-    for tag, value in zip(ID3_TAGS, values):
-        if value or empty_override:
-            setattr(audiofile.tag, tag, id3_serialize(tag, value))
-    audiofile.tag.save(encoding=encoding)
-
-    click.echo('Updated ID3 tags for file: %s' % file_path)
-
+def validate_regex_list(ctx, param, values):
+    output = []
+    for value in values:
+        try:
+            output.append(re.compile(value))
+        except Exception as e:
+            raise click.BadParameter('"%s" is not proper regex pattern - %s' % (value, str(e)))
+    return output
 
 def tabulate_ignored_files(table):
     """
@@ -153,23 +113,6 @@ def tabulate_renames(table):
     pass
 
 
-def get_matched_files(input_path):
-    for path, dirs, files in os.walk(six.text_type(input_path)):
-        path = normalize('NFC', path)
-        matched_files = (normalize('NFC', file_) for file_ in files if AUDIO_FILE_PATTERN.match(file_))
-        yield (path, matched_files)
-
-
-def validate_regex_list(ctx, param, values):
-    output = []
-    for value in values:
-        try:
-            output.append(re.compile(value))
-        except Exception as e:
-            raise click.BadParameter('"%s" is not proper regex pattern - %s' % (value, str(e)))
-    return output
-
-
 @click.group()
 def cli():
     pass
@@ -180,16 +123,12 @@ def cli():
 def list_(**kwargs):
     input_path = kwargs['input']
     values = []
-
-    for dir_path, matched_files in get_matched_files(input_path):
+    for row in id3_list(input_path):
+        dir_path = row['dir']
         path_values = []
-
-        for file_ in matched_files:
-            id3_values = get_id3_values(os.path.join(dir_path, file_))
-            path_values.append((file_, id3_values))
-
-        if path_values:
-            values.append((dir_path, path_values))
+        for file_ in row['files']:
+            path_values.append((file_['file'], file_['id3']))
+        values.append((dir_path, path_values))
 
     click.echo(tabulate_values(values))
     click.echo('\n')
@@ -278,61 +217,6 @@ def id3(**kwargs):
     apply_changes(approved_changes, encoding=encoding)
 
 
-def get_id3_changes(input_path, empty_override, file_patterns, asciify, unescape):
-    if empty_override:
-        def record_equals(values, changes):
-            return values == changes
-    else:
-        def record_equals(values, changes):
-            for i, x in enumerate(changes):
-                if x and x != values[i]:
-                    return False
-            return True
-
-    all_changes = []  # (dir_path, [(file_name, new_values[], old_values[])])
-    ignored_files = []  # (dir_path, [(file_name, reason)])
-
-    for dir_path, matched_files in get_matched_files(input_path):
-        path_changes = []
-        path_ingored_files = []
-
-        for file_name in matched_files:
-            file_path = os.path.join(dir_path, file_name)
-            values = get_id3_values(file_path)
-            new_values = values
-
-            for file_pattern in file_patterns:
-                match = file_pattern.search(file_path)
-                if not match:
-                    continue
-
-                groups = {key.lower(): value for key, value in match.groupdict().items()}
-                new_values = [(groups.get(tag) or '').strip() for tag in ID3_TAGS]
-                break
-
-            if unescape:
-                new_values = [html.unescape(cell) for cell in new_values]
-
-            if asciify:
-                new_values = [unidecode(cell) for cell in new_values]
-
-            if record_equals(values, new_values):
-                if file_patterns and values is new_values:
-                    reason = 'Not matched'
-                else:
-                    reason = 'No changes'
-                path_ingored_files.append((file_name, reason))
-            else:
-                path_changes.append((file_name, new_values, values))
-
-        if path_ingored_files:
-            ignored_files.append((dir_path, path_ingored_files))
-        if path_changes:
-            all_changes.append((dir_path, path_changes))
-
-    return all_changes, ignored_files
-
-
 class SkipRestException(Exception):
     pass
 
@@ -368,12 +252,6 @@ def get_approved_changes(changes, confirm_each_directory, confirm_all, no_confir
     return approved_changes
 
 
-def apply_changes(changes, encoding):
-    for dir_path, rows in changes:
-        for file_name, new_values, old_values in rows:
-            save_id3_values(os.path.join(dir_path, file_name), new_values, encoding=encoding)
-
-
 @cli.command()
 @click.argument('input', default='.', type=click.Path(exists=True, dir_okay=True, readable=True))
 @click.option('--output', '-o', type=click.Path(dir_okay=True, readable=True),
@@ -400,24 +278,12 @@ def rename(**kwargs):
     apply_renames(approved_renames, input_path, output_path)
 
 
-def get_renames(input_path, file_path_pattern):
-    all_renames = []  # (dir_path, [(new_file_path, old_file_path,)])
-
-    for dir_path, matched_files in get_matched_files(input_path):
-        path_renames = []
-
-        for file_name in matched_files:
-            old_file_path = os.path.join(dir_path, file_name)
-            new_file_path = file_path_pattern
-            for name, value in get_id3_values_dict(old_file_path).items():
-                new_file_path = new_file_path.replace('$' + name, value)
-
-            path_renames.append((new_file_path, os.path.relpath(old_file_path, input_path)))
-
-        if path_renames:
-            all_renames.append((dir_path, path_renames))
-
-    return all_renames
+@cli.command()
+@click.argument('input', default='.', type=click.Path(exists=True, dir_okay=True, readable=True))
+def ui(**kwargs):
+    from abp import ui
+    app = ui.create_app(kwargs['input'])
+    app.run(debug=True)
 
 
 def get_approved_renames(renames, confirm_each_directory, confirm_all, no_confirmation):
@@ -449,22 +315,6 @@ def get_approved_renames(renames, confirm_each_directory, confirm_all, no_confir
         pass
 
     return approved_renames
-
-
-def mkdirnotex(filename):
-    folder = os.path.dirname(filename)
-    if not os.path.exists(folder):
-        os.makedirs(folder)
-
-
-def apply_renames(renames, input_path, output_path):
-    for dir_path, rows in renames:
-        for new_file_path, old_file_path in rows:
-            new_full_file_path = os.path.join(output_path, new_file_path)
-            old_full_file_path = os.path.join(input_path, old_file_path)
-
-            mkdirnotex(new_full_file_path)
-            os.rename(old_full_file_path, new_full_file_path)
 
 
 cli.add_command(list_)
